@@ -48,7 +48,11 @@ class FakeOrders:
 
 
 class FakePortfolio:
+    def __init__(self) -> None:
+        self.position_calls = []
+
     def positions(self, params=None):
+        self.position_calls.append(params)
         return {"positions": [{"marketSlug": "m", "quantity": 2}]}
 
 
@@ -143,6 +147,7 @@ def test_prepare_cancel_cancel_all_and_close_position(tmp_path) -> None:
     assert client.orders.cancel_calls == [("ord-1", {"marketSlug": "m"})]
     assert client.orders.cancel_all_calls == [{"slugs": ["m"]}]
     assert client.orders.close_calls == [request]
+    assert client.portfolio.position_calls == [{"market": "m"}]
 
 
 def test_timeout_after_token_consumption_is_ambiguous_and_not_retried(tmp_path) -> None:
