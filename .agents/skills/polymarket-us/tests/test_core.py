@@ -49,3 +49,19 @@ def test_authenticated_client_requires_environment_credentials(monkeypatch: pyte
 
     with pytest.raises(CredentialError, match="POLYMARKET_KEY_ID"):
         build_client(authenticated=True)
+
+
+def test_serialize_exception_redacts_environment_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pmus_core.client import serialize_exception
+
+    monkeypatch.setenv("POLYMARKET_KEY_ID", "key-id-sensitive")
+    monkeypatch.setenv("POLYMARKET_SECRET_KEY", "secret-key-sensitive")
+    payload = serialize_exception(
+        "orders.create",
+        RuntimeError("failed with key-id-sensitive and secret-key-sensitive"),
+    )
+
+    message = payload["error"]["message"]
+    assert "key-id-sensitive" not in message
+    assert "secret-key-sensitive" not in message
+    assert "[REDACTED]" in message
