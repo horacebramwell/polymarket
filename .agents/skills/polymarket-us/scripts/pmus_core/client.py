@@ -53,9 +53,9 @@ def serialize_exception(command: str, exc: Exception) -> dict[str, Any]:
         status = getattr(exc, "status_code", None)
     metadata: dict[str, Any] = {"status": status}
     if hasattr(exc, "ambiguous"):
-        metadata["ambiguous"] = bool(getattr(exc, "ambiguous"))
+        metadata["ambiguous"] = bool(exc.ambiguous)
     if hasattr(exc, "retry_safe"):
-        metadata["retrySafe"] = bool(getattr(exc, "retry_safe"))
+        metadata["retrySafe"] = bool(exc.retry_safe)
     if hasattr(exc, "recovery"):
-        metadata["recovery"] = str(getattr(exc, "recovery"))
+        metadata["recovery"] = str(exc.recovery)
     return failure(command, exc.__class__.__name__, message, **metadata)

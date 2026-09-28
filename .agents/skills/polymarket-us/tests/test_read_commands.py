@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from argparse import Namespace
-from types import SimpleNamespace
 
 import pytest
 

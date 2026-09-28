@@ -1,4 +1,8 @@
-from pmus_core.docs_check import REQUIRED_DOC_SUFFIXES, check_required_docs, parse_docs_index
+from pmus_core.docs_check import (
+    REQUIRED_DOC_SUFFIXES,
+    check_required_docs,
+    parse_docs_index,
+)
 
 
 FIXTURE = """# Polymarket US Documentation
