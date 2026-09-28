@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from pmus_core import docs_check
+import importlib
 
+
+docs_check = importlib.import_module("pmus_core.docs_check")
 
 FIXTURE = """# Polymarket US Documentation
 - [Authentication](https://docs.polymarket.us/api-reference/authentication.md): Auth
