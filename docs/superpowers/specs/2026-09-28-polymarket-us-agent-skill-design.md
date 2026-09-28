@@ -31,18 +31,18 @@ The implementation must treat the following sources as authoritative, in this or
 3. Official Polymarket US Python SDK: `https://github.com/Polymarket/polymarket-us-python`
 4. Official Polymarket US TypeScript SDK: `https://github.com/Polymarket/polymarket-us-typescript`
 
-Agent-platform discovery/install behavior should be grounded in the current official docs for each platform rather than copied from stale blog posts:
+Agent-platform discovery/install behavior must be grounded in current official documentation:
 
 - OpenAI/Codex Skills documentation under `https://developers.openai.com/`
-- Claude Code Skills documentation under `https://code.claude.com/docs/en/skills`
+- Claude Code Skills documentation at `https://code.claude.com/docs/en/skills`
 - Google Antigravity Skills documentation/codelabs under `https://codelabs.developers.google.com/`
-- Hermes Agent Skills documentation under `https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/`
+- Hermes Agent Skills documentation at `https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/`
 
 The skill must prefer Polymarket US documentation over International Polymarket documentation whenever the user is asking about `polymarket.us`, US API keys, or the US SDKs.
 
 ## 3. Non-Goals for v1
 
-The first implementation will not attempt to become a general trading bot or an autonomous strategy engine.
+The first implementation will not attempt to become a general trading bot or autonomous strategy engine.
 
 The following are deliberately out of scope for v1:
 
@@ -85,25 +85,25 @@ README.md
 
 `SKILL.md` will be the canonical behavioral contract. Supporting material will be split into focused reference files so agents can load details progressively rather than placing the entire API manual in the initial prompt context.
 
-The skill will not duplicate a second full `SKILL.md` under `.claude/skills`. Cross-agent support will be handled by discovery of `.agents/skills` where supported or by the installer creating an appropriate symlink/copy when required.
+The skill will not maintain a second handwritten `SKILL.md` under `.claude/skills`. Cross-agent support will use the canonical directory directly where supported and symlink/copy it where a runtime requires a different discovery path.
 
 ## 5. Cross-Agent Discovery and Installation
 
 ### Codex
 
-The repository-scoped canonical skill lives in `.agents/skills/polymarket-us/`. Codex-compatible instructions will use the current official Codex/Agent Skills discovery behavior.
+The repository-scoped canonical skill lives in `.agents/skills/polymarket-us/`. Codex instructions will follow current official Agent Skills discovery behavior.
 
 ### Google Antigravity
 
-Antigravity supports project-scoped skills in `<project-root>/.agents/skills/`, so it can consume the canonical skill directly.
+Antigravity supports project-scoped skills in `<project-root>/.agents/skills/`, so it consumes the canonical skill directly.
 
 ### Claude Code
 
-Claude Code discovers skills from `.claude/skills/` and user-level skill directories. The installer will expose the canonical skill to Claude Code without maintaining a manually divergent source copy. Preferred behavior is a symlink when the environment supports it; otherwise the installer may copy the directory and clearly mark the generated copy as derived from the canonical source.
+Claude Code discovers project skills under `.claude/skills/` and supports symlinked skill folders. `scripts/install-skill.py --target claude` will create `.claude/skills/polymarket-us` as a symlink to the canonical `.agents/skills/polymarket-us` directory. If symlink creation is unavailable on the host platform, the installer will create a generated copy and print that it must be refreshed after canonical-skill changes. It will never overwrite an existing independent skill unless `--force` is supplied.
 
 ### Hermes Agent
 
-Hermes uses `~/.hermes/skills/` as its primary skill location and supports additional directories through `skills.external_dirs` in `~/.hermes/config.yaml`. Documentation will recommend pointing Hermes at the repository's `.agents/skills` directory when practical; the installer may also copy/symlink the skill into a Hermes user skill directory when explicitly requested.
+Hermes uses `~/.hermes/skills/` as its primary skill directory and also supports `skills.external_dirs`. `scripts/install-skill.py --target hermes` will create `~/.hermes/skills/polymarket-us` as a symlink to the canonical skill; if symlinks are unavailable, it will copy the canonical skill. The documentation will also show `skills.external_dirs` as the preferred manual configuration for users who keep a shared skills repository. Existing independent Hermes skills will not be overwritten without `--force`.
 
 ### Other Agent Skills Consumers
 
@@ -146,7 +146,7 @@ For any state-changing order action, the agent must:
 4. use the official preview endpoint where the endpoint supports previewing the intended order;
 5. present a concise confirmation summary;
 6. obtain explicit confirmation from the user after that summary;
-7. submit the action once;
+7. submit the exact confirmed action once using the matching one-time confirmation token;
 8. inspect the returned order/result and report the confirmed state;
 9. if the submission result is ambiguous because of a timeout/network failure, inspect order state before considering any retry.
 
@@ -200,7 +200,7 @@ polymarket_us.py orders cancel-all [...market filters] --confirm <confirmation-t
 polymarket_us.py positions close <slug> [...execution args] --confirm <confirmation-token>
 ```
 
-Exact flags will follow the SDK request model rather than inventing an alternative vocabulary.
+Exact flags will mirror the SDK request model rather than inventing a competing vocabulary.
 
 ### Structured Output
 
@@ -250,34 +250,50 @@ Requirements:
 - never persist credentials into repository configuration;
 - never print credentials;
 - never include credentials in tracebacks;
-- `.env` files, if a developer chooses to use one locally, must be gitignored and must not be loaded implicitly by the production CLI unless implementation review explicitly adds that behavior;
+- `.env` files, if a developer chooses to use one locally, must be gitignored;
+- the production CLI will not implicitly load `.env` files;
 - read-only public market commands must work without credentials;
 - authenticated commands must fail clearly when credentials are unavailable.
 
 ## 9. Confirmation Mechanism
 
-The CLI must make it difficult for an agent to accidentally bypass the user-confirmation step.
+The CLI will require a preview-bound, one-time token before any state-changing call.
 
-`orders preview` will produce a short-lived confirmation payload derived from the normalized request and preview context. The implementation plan will choose the simplest deterministic mechanism that does not require storing secrets, likely a hash/token over the normalized pending action plus a timestamp/expiry.
+For `orders preview`, the CLI will:
 
-A state-changing command must receive the matching confirmation token. The CLI will reject missing, expired, or mismatched confirmation tokens before calling the SDK.
+1. normalize the proposed SDK request into canonical JSON;
+2. call the official preview endpoint;
+3. generate a cryptographically random 128-bit token;
+4. store the token, normalized action, creation time, and a 10-minute expiry in a user-local temporary/cache file with restrictive permissions where supported;
+5. return the token and normalized preview summary to the agent.
 
-This mechanism is defense in depth. The skill instructions still require the agent to show the user the exact trade/action and obtain explicit confirmation before using the token.
+For modify/cancel/cancel-all/close actions that do not map directly to create-order preview, the CLI will first read the relevant current order/position state, normalize the requested mutation, and generate the same kind of one-time action token.
 
-For cancellations and modifications, where a create-order preview may not map exactly to the action, the CLI will generate an action-specific confirmation payload from the current order state plus requested mutation.
+A state-changing command must provide the token. Before calling the SDK, the CLI will verify that:
+
+- the token exists;
+- it is unexpired;
+- it has not been consumed;
+- its normalized action exactly matches the requested action.
+
+The token will be consumed immediately before the SDK mutation call, preventing accidental reuse. If the SDK result is ambiguous, the CLI will inspect exchange state rather than replaying the token.
+
+This token is defense in depth against accidental action drift or direct mutation without a preview. It is not treated as proof that a human approved the trade. The Agent Skill instructions remain responsible for showing the exact action to the user and waiting for explicit user confirmation before invoking the mutation command.
+
+Confirmation records contain no API secrets and are removed after consumption or expiry cleanup.
 
 ## 10. Documentation Freshness
 
-`check_docs.py` will verify that official documentation remains reachable and will inspect `https://docs.polymarket.us/llms.txt` to discover current relevant pages.
+`check_docs.py` will verify that official documentation remains reachable and inspect `https://docs.polymarket.us/llms.txt` to discover current relevant pages.
 
 The skill will instruct agents to run a docs check before:
 
 - generating or changing API-sensitive implementation code;
 - using an endpoint/field not represented in the local references;
-- responding to a user who explicitly asks for the latest/current API behavior;
+- responding to a user who explicitly asks for latest/current API behavior;
 - diagnosing an API mismatch or unknown enum/field.
 
-The script should not scrape the entire documentation site on every normal market lookup. It should fetch the index, identify relevant official pages, and keep the operation bounded.
+The script will not scrape the entire documentation site on every normal market lookup. It will fetch the index, identify relevant official pages, and keep the operation bounded.
 
 Local reference files are guidance and workflow documentation, not a frozen substitute for the official docs.
 
@@ -285,15 +301,15 @@ Local reference files are guidance and workflow documentation, not a frozen subs
 
 The wrapper will map official SDK exceptions into stable JSON error types.
 
-Important behavior:
+Rules:
 
-- validation/authentication/not-found errors: do not retry automatically;
-- rate limits: surface retry guidance and only retry read operations conservatively;
-- read-only transient failures: bounded retry with backoff is acceptable;
+- validation/authentication/not-found errors: no automatic retry;
+- rate limits: surface retry guidance; read-only operations may use bounded backoff;
+- other transient read-only failures: bounded retry with backoff is allowed;
 - state-changing trade requests: never blindly retry after an ambiguous network timeout;
 - after an ambiguous create/modify/cancel response, query relevant order state first;
 - malformed or unsupported enum values must fail locally when practical;
-- if official docs and installed SDK appear inconsistent, stop the trade action and report the mismatch rather than guessing.
+- if official docs and the installed SDK appear inconsistent, stop the trade action and report the mismatch rather than guessing.
 
 ## 12. Market Semantics
 
@@ -310,11 +326,11 @@ The official SDK exposes authenticated WebSocket support for order, position, ba
 In v1:
 
 - WebSocket capabilities will be documented in references;
-- the skill may use short-lived streaming examples for debugging/development when explicitly requested;
 - the primary CLI will remain request/response oriented;
-- no persistent watcher or autonomous trading loop will be shipped.
+- no persistent watcher or autonomous trading loop will be shipped;
+- WebSocket code will not be part of the initial executable CLI surface.
 
-A future iteration can add a dedicated stream command once the core order lifecycle is stable and tested.
+A future iteration can add dedicated stream commands after the core order lifecycle is stable and tested.
 
 ## 14. Testing Strategy
 
@@ -329,37 +345,37 @@ Use mocks/fakes around the SDK to verify:
 - JSON output envelopes;
 - error normalization;
 - no credential leakage;
-- confirmation-token creation and validation;
-- rejection of missing/mismatched/expired confirmation;
+- one-time confirmation-token creation and validation;
+- rejection of missing/mismatched/expired/reused confirmation tokens;
 - no state-changing SDK call occurs before confirmation validation;
 - ambiguous trade failures are not blindly retried.
 
 ### Public integration tests
 
-Optional tests may hit unauthenticated official public endpoints for:
+Opt-in network tests will cover unauthenticated official public endpoints for:
 
 - event listing;
 - market listing/search;
 - market retrieval;
 - BBO/order book.
 
-They must be skippable when network access is unavailable.
+They will be skipped automatically when network integration tests are not enabled.
 
 ### Authenticated integration tests
 
 Account/portfolio/order-preview integration tests are opt-in and require credentials.
 
-Tests that can place, modify, cancel, or close live orders require an additional explicit environment opt-in such as:
+Tests that can place, modify, cancel, or close live orders require an additional explicit environment opt-in:
 
 ```text
 POLYMARKET_RUN_LIVE_TRADE_TESTS=1
 ```
 
-Even with that variable set, tests must use narrowly controlled fixtures and never run as part of the default test suite.
+Even with that variable set, live-trade tests must use narrowly controlled fixtures and never run as part of the default suite.
 
 ## 15. Installer
 
-`scripts/install-skill.py` will provide explicit installation targets rather than trying to auto-detect and mutate every agent configuration silently.
+`scripts/install-skill.py` will provide explicit installation targets rather than auto-detecting and mutating every agent configuration silently.
 
 Expected modes:
 
@@ -371,9 +387,9 @@ python scripts/install-skill.py --target antigravity
 python scripts/install-skill.py --target all
 ```
 
-For Codex and Antigravity, project-local installation may be a no-op because the canonical `.agents/skills` path is already present.
+For Codex and Antigravity, project-local installation is a validation/no-op because the canonical `.agents/skills` path is already present.
 
-For Claude and Hermes, the installer will prefer symlinks where supported and offer/perform a copy fallback. It must never overwrite an existing independently modified skill without an explicit force/update option.
+For Claude and Hermes, the installer will create a symlink by default and fall back to a generated copy when symlinks are unavailable. It will never overwrite an existing independently modified skill without `--force`.
 
 ## 16. README
 
@@ -403,19 +419,19 @@ It must:
 - avoid credential persistence and disclosure;
 - never attempt to bypass KYC, geographic, account, market, trading-limit, or other eligibility restrictions;
 - surface official API rejection messages rather than disguising them;
-- avoid autonomous trading or strategy execution unless a future design explicitly adds a separately reviewed mechanism;
+- avoid autonomous trading or strategy execution unless a future separately reviewed design adds it;
 - keep state-changing calls behind explicit confirmation.
 
 ## 18. Initial Implementation Sequence
 
-After this design is reviewed, the implementation plan should break work into small verifiable steps:
+After this design is reviewed, the implementation plan will break work into small verifiable steps:
 
 1. repository scaffolding and dependencies;
 2. canonical `SKILL.md` and reference sources;
 3. read-only CLI commands;
 4. authenticated account/portfolio reads;
 5. order preview;
-6. confirmation-token mechanism;
+6. one-time confirmation-token mechanism;
 7. live create/modify/cancel/cancel-all/close commands;
 8. installer and cross-agent docs;
 9. tests and verification;
@@ -433,7 +449,7 @@ The implementation is complete when all of the following are true:
 - public market/event/search/BBO/book commands work without credentials;
 - authenticated balance/position/activity/open-order commands use environment credentials;
 - preview/create/modify/cancel/cancel-all/close-position are represented in the supported workflow;
-- all state-changing commands enforce CLI-level confirmation validation;
+- every state-changing command enforces a matching unexpired one-time confirmation token;
 - an ambiguous state-changing request is never blindly retried;
 - official docs can be checked through `llms.txt` and relevant current pages;
 - the repository clearly distinguishes Polymarket US from International Polymarket APIs;
