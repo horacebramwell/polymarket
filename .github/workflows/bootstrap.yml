@@ -20,21 +20,20 @@ jobs:
           import base64
           import gzip
           import json
-          import shutil
           from pathlib import Path
 
           parts = sorted(Path('.bootstrap').glob('payload-*.txt'))
           payload = ''.join(path.read_text(encoding='utf-8').strip() for path in parts)
           data = json.loads(gzip.decompress(base64.b64decode(payload)))
           for name, content in data['files'].items():
+              if name.startswith('.github/workflows/'):
+                  continue
               path = Path(name)
               path.parent.mkdir(parents=True, exist_ok=True)
               path.write_text(content, encoding='utf-8')
               mode = data['modes'].get(name)
               if mode:
                   path.chmod(mode)
-          shutil.rmtree('.bootstrap')
-          Path('.github/workflows/bootstrap.yml').unlink()
           PY
       - name: Commit implementation
         run: |
