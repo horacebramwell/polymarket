@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pmus_core import docs_check
 
 
