@@ -46,8 +46,18 @@ def build_client(authenticated: bool) -> object:
     return PolymarketUS(key_id=key_id, secret_key=secret_key)
 
 
+def _redact_credentials(message: str) -> str:
+    redacted = message
+    for name in ("POLYMARKET_KEY_ID", "POLYMARKET_SECRET_KEY"):
+        value = os.environ.get(name)
+        if value:
+            redacted = redacted.replace(value, "[REDACTED]")
+    return redacted
+
+
 def serialize_exception(command: str, exc: Exception) -> dict[str, Any]:
     message = getattr(exc, "message", None) or str(exc) or exc.__class__.__name__
+    message = _redact_credentials(str(message))
     status = getattr(exc, "status", None)
     if status is None:
         status = getattr(exc, "status_code", None)
