@@ -150,7 +150,7 @@ def prepare_close_position(
     store: ConfirmationStore,
 ) -> dict[str, object]:
     slug = request.get("marketSlug")
-    params = {"slugs": [slug]} if isinstance(slug, str) and slug else None
+    params = {"market": slug} if isinstance(slug, str) and slug else None
     positions = client.portfolio.positions(params)
     issued = store.issue("positions.close", request, {"positions": positions})
     return {
