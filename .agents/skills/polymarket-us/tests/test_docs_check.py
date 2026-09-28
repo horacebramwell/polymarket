@@ -1,4 +1,4 @@
-import pmus_core.docs_check as docs_check
+from pmus_core import docs_check
 
 
 FIXTURE = """# Polymarket US Documentation
